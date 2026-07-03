@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, ".")
 from roundtable import (
     PANEL,
+    TIMEOUT,
     Take,
     _anon,
     _complete,
@@ -120,3 +121,135 @@ def test_complete_success(monkeypatch):
 
     assert take.text == "模型的回答"
     assert take.error is None
+
+
+# ── 补充:更多边界场景 ────────────────────────────────────────────────────────
+
+def test_complete_empty_response(monkeypatch):
+    """模型返回空内容时应记录错误。"""
+    mock_response = AsyncMock()
+    mock_response.choices = [AsyncMock(message=AsyncMock(content=""))]
+
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+    with patch("roundtable.AsyncOpenAI", return_value=mock_client):
+        monkeypatch.setenv("TEST_KEY", "sk-test")
+        p = Panelist(name="TestModel", base_url="http://test", api_key_env="TEST_KEY", model="m")
+        take = asyncio.run(_complete(p, "问题"))
+
+    assert take.text == ""
+    assert take.error is not None
+    assert "空内容" in take.error
+
+
+def test_complete_api_exception(monkeypatch):
+    """API 异常时应包含模型名。"""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+    with patch("roundtable.AsyncOpenAI", return_value=mock_client):
+        monkeypatch.setenv("TEST_KEY", "sk-test")
+        p = Panelist(name="DeepSeek", base_url="http://test", api_key_env="TEST_KEY", model="m")
+        take = asyncio.run(_complete(p, "问题"))
+
+    assert take.error is not None
+    assert "DeepSeek" in take.error
+    assert "RuntimeError" in take.error
+
+
+def test_complete_timeout(monkeypatch):
+    """超时应包含模型名和超时秒数。"""
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(side_effect=asyncio.TimeoutError())
+
+    with patch("roundtable.AsyncOpenAI", return_value=mock_client):
+        monkeypatch.setenv("TEST_KEY", "sk-test")
+        p = Panelist(name="Qwen", base_url="http://test", api_key_env="TEST_KEY", model="m")
+        take = asyncio.run(_complete(p, "问题", timeout=5))
+
+    assert take.error is not None
+    assert "Qwen" in take.error
+    assert "超时" in take.error
+
+
+def test_gather_all_success(monkeypatch):
+    """全部模型成功时应返回全部 Take。"""
+    async def mock_complete(panelist, *args, **kwargs):
+        return Take(model=panelist.name, text=f"{panelist.name}的意见")
+
+    monkeypatch.setattr("roundtable._complete", mock_complete)
+
+    async def run():
+        return await _gather("测试问题")
+
+    takes = asyncio.run(run())
+    ok = [t for t in takes if not t.error]
+    assert len(ok) == len(PANEL)
+
+
+def test_gather_two_failures(monkeypatch):
+    """两个模型失败,一个成功 → 应退出(sys.exit(1))。"""
+    async def mock_complete(panelist, *args, **kwargs):
+        if panelist.name == PANEL[0].name:
+            return Take(model=panelist.name, text="正常意见")
+        return Take(model=panelist.name, text="", error="失败")
+
+    monkeypatch.setattr("roundtable._complete", mock_complete)
+
+    async def run():
+        return await _gather("测试问题")
+
+    with pytest.raises(SystemExit) as exc_info:
+        asyncio.run(run())
+    assert exc_info.value.code == 1
+
+
+def test_anon_preserves_order():
+    """匿名化应保持原始顺序(A→B→C)。"""
+    takes = [
+        Take(model="X", text="第一个"),
+        Take(model="Y", text="第二个"),
+        Take(model="Z", text="第三个"),
+    ]
+    result = _anon(takes)
+    pos_a = result.index("【观点A】")
+    pos_b = result.index("【观点B】")
+    pos_c = result.index("【观点C】")
+    assert pos_a < pos_b < pos_c
+
+
+def test_report_includes_question():
+    """报告必须包含原始问题。"""
+    takes = [Take(model="A", text="意见")]
+    report = _report("该不该用微服务?", takes, "决策地图", "对抗报告")
+    assert "该不该用微服务?" in report
+
+
+def test_report_includes_timestamp():
+    """报告必须包含时间戳。"""
+    takes = [Take(model="A", text="意见")]
+    report = _report("问题", takes, "dm", "adv")
+    from datetime import datetime
+    # 验证时间戳格式 YYYY-MM-DD HH:MM
+    import re
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", report)
+
+
+def test_report_includes_failed_models():
+    """报告应标注失败模型。"""
+    takes = [
+        Take(model="A", text="正常"),
+        Take(model="B", text="", error="超时(60s)"),
+    ]
+    report = _report("问题", takes, "dm", "adv")
+    assert "⚠️" in report
+    assert "超时" in report
+
+
+def test_panel_heterogeneous():
+    """面板应来自不同厂商(P1)。"""
+    urls = [p.base_url for p in PANEL]
+    # 至少应有 2 个不同的域名
+    domains = set(u.split("/")[2] for u in urls)
+    assert len(domains) >= 2, f"面板同厂商过多: {domains}"

@@ -5,6 +5,7 @@
 工具不给答案,只产出决策地图;决策者是人。
 """
 
+import argparse
 import asyncio
 import os
 import sys
@@ -41,9 +42,10 @@ PANEL: list[Panelist] = [
     Panelist(name="GLM",       base_url="https://open.bigmodel.cn/api/paas/v4", api_key_env="ZHIPU_API_KEY",     model="glm-4-flash"),
 ]
 
-# Facilitator / Adversary 复用面板中一个模型
+# Facilitator / Adversary 独立配置(可指向面板中任意模型,也可指向面板外)
+# 使用面板中第一个模型作为默认值;编辑此处可指定其他模型
 FACILITATOR_MODEL: Panelist = PANEL[0]
-ADVERSARY_MODEL: Panelist = PANEL[0]
+ADVERSARY_MODEL: Panelist = PANEL[1] if len(PANEL) > 1 else PANEL[0]
 
 # ── 超时(秒) ─────────────────────────────────────────────────────────────────
 
@@ -79,11 +81,14 @@ async def _complete(
             ),
             timeout=timeout,
         )
-        return Take(model=panelist.name, text=resp.choices[0].message.content.strip())
+        content = resp.choices[0].message.content
+        if not content:
+            return Take(model=panelist.name, text="", error=f"{panelist.name}: 模型返回空内容")
+        return Take(model=panelist.name, text=content.strip())
     except asyncio.TimeoutError:
-        return Take(model=panelist.name, text="", error=f"超时({timeout}s)")
+        return Take(model=panelist.name, text="", error=f"{panelist.name}: 超时({timeout}s)")
     except Exception as e:
-        return Take(model=panelist.name, text="", error=f"{type(e).__name__}: {e}")
+        return Take(model=panelist.name, text="", error=f"{panelist.name}: {type(e).__name__}: {e}")
 
 
 # ── 阶段一:独立盲审(P3: gather 并行,零共享) ──────────────────────────────────
@@ -262,9 +267,22 @@ async def _run(question: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) > 1:
-        question = " ".join(sys.argv[1:])
-    else:
+    global TIMEOUT  # noqa: PLW0603
+    parser = argparse.ArgumentParser(
+        description="多模型圆桌决策工具 — 独立盲审 / 结构化抽取 / 对抗审查",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="示例:\n"
+               '  python roundtable.py "该不该把感知模块从 A 架构重构成 B"\n'
+               "  python roundtable.py   # 无参数则交互输入",
+    )
+    parser.add_argument("question", nargs="?", default=None, help="决策问题(省略则交互输入)")
+    parser.add_argument("--timeout", type=int, default=TIMEOUT, help=f"单模型超时秒数(默认 {TIMEOUT})")
+    args = parser.parse_args()
+
+    TIMEOUT = args.timeout
+
+    question = args.question
+    if not question:
         question = input("请输入决策问题: ").strip()
         if not question:
             print("❌ 问题不能为空", file=sys.stderr)
