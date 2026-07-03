@@ -37,9 +37,9 @@ class Take:
 # ── 面板配置(P1: 必须来自不同厂商,实现误差去相关) ────────────────────────────
 
 PANEL: list[Panelist] = [
-    Panelist(name="DeepSeek",  base_url="https://api.deepseek.com/v1",          api_key_env="DEEPSEEK_API_KEY",  model="deepseek-chat"),
+    Panelist(name="DeepSeek",  base_url="https://api.deepseek.com/v1",          api_key_env="DEEPSEEK_API_KEY",  model="deepseek-v4-flash"),
     Panelist(name="Qwen",      base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", api_key_env="DASHSCOPE_API_KEY", model="qwen-plus"),
-    Panelist(name="GLM",       base_url="https://open.bigmodel.cn/api/paas/v4", api_key_env="ZHIPU_API_KEY",     model="glm-4-flash"),
+    Panelist(name="GLM",       base_url="https://open.bigmodel.cn/api/paas/v4", api_key_env="ZHIPU_API_KEY",     model="glm-5.2"),
 ]
 
 # Facilitator / Adversary 独立配置(可指向面板中任意模型,也可指向面板外)
