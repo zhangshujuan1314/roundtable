@@ -43,9 +43,9 @@ PANEL: list[Panelist] = [
 ]
 
 # Facilitator / Adversary 独立配置(可指向面板中任意模型,也可指向面板外)
-# 使用面板中第一个模型作为默认值;编辑此处可指定其他模型
+# 默认: Facilitator 用第一个面板模型, Adversary 用第二个;编辑此处可指定
 FACILITATOR_MODEL: Panelist = PANEL[0]
-ADVERSARY_MODEL: Panelist = PANEL[1] if len(PANEL) > 1 else PANEL[0]
+ADVERSARY_MODEL: Panelist = PANEL[-1]  # 用最后一个面板模型
 
 # ── 超时(秒) ─────────────────────────────────────────────────────────────────
 
@@ -256,8 +256,12 @@ async def _run(question: str) -> None:
     # 拼装报告
     report = _report(question, takes, decision_map, adversary_report)
 
-    # stdout
-    print(report)
+    # stdout(处理 Windows 终端编码)
+    try:
+        print(report)
+    except UnicodeEncodeError:
+        sys.stdout.reconfigure(encoding="utf-8")
+        print(report)
 
     # 落盘
     fname = f"roundtable_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
