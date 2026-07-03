@@ -7,3 +7,6 @@ roundtable_*.md
 roundtable_*.html
 *.egg-info/
 dist/
+build/
+*.spec.bak
+test_build*
