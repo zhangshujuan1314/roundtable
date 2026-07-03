@@ -18,6 +18,8 @@ dependencies = [
 
 [project.scripts]
 roundtable = "roundtable:main"
+roundtable-web = "web.app:main"
 
 [tool.setuptools]
 py-modules = ["roundtable"]
+packages = ["web"]
