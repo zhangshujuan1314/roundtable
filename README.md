@@ -2,6 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-green.svg)](https://github.com/zhangshujuan1314/roundtable/releases)
 
 对**没有标准答案**的决策问题(架构选型、技术路线、职业/产品决策),并行调用多个**异构厂商**的 LLM 做独立盲审,然后结构化呈现「共识/分歧/独有考量/未定变量」,最后由对抗性审查攻击多数意见。
 
@@ -9,76 +10,59 @@
 
 ---
 
-## 安装
+## 快速开始(3 步上手)
 
-```bash
-pip install git+https://github.com/zhangshujuan1314/roundtable.git
-```
+### 1. 下载安装包
 
-或从源码安装:
+[下载 Roundtable-v1.0.0-Windows.zip](https://github.com/zhangshujuan1314/roundtable/raw/main/Roundtable-v1.0.0-Windows.zip)
 
-```bash
-git clone https://github.com/zhangshujuan1314/roundtable.git
-cd roundtable
-pip install .
-```
+### 2. 解压并配置
 
----
-
-## 配置
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env`,填入至少 2 家厂商的 API Key:
+解压后编辑 `.env` 文件,填入至少 2 家厂商的 API Key:
 
 ```env
 DEEPSEEK_API_KEY=sk-xxx
 ZHIPU_API_KEY=xxx
 ```
 
-支持的厂商:
+### 3. 双击启动
 
-| 厂商 | 环境变量 | 模型 |
-|---|---|---|
-| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-v4-flash |
-| Qwen (DashScope) | `DASHSCOPE_API_KEY` | qwen-plus |
-| GLM (智谱) | `ZHIPU_API_KEY` | glm-5.2 |
+双击 `Roundtable.bat`,浏览器自动打开,输入决策问题即可。
 
 ---
 
-## 使用
+## 获取 API Key
 
-### Web UI(推荐)
+| 厂商 | 获取地址 | 模型 |
+|---|---|---|
+| DeepSeek | [platform.deepseek.com](https://platform.deepseek.com/api_keys) | deepseek-v4-flash |
+| GLM (智谱) | [open.bigmodel.cn](https://open.bigmodel.cn) | glm-5.2 |
+
+---
+
+## 其他安装方式
+
+### pip 安装
 
 ```bash
-# 启动 Web 界面(自动打开浏览器)
-roundtable-web
-
-# 或从源码
-python -m web.app
-
-# Windows 双击
-start.bat
+pip install git+https://github.com/zhangshujuan1314/roundtable.git
+roundtable-web  # 启动 Web UI
 ```
 
-浏览器打开 `http://127.0.0.1:7800`,输入问题即可。
-
-### 命令行
+### 源码运行
 
 ```bash
-# 直接提问
+git clone https://github.com/zhangshujuan1314/roundtable.git
+cd roundtable
+pip install -r requirements.txt
+python -m web.app
+```
+
+### 命令行模式
+
+```bash
 roundtable "该不该把感知模块从 A 架构重构成 B"
-
-# 交互模式
-roundtable
-
-# 指定超时
 roundtable --timeout 30 "该不该迁移数据库"
-
-# 不打开浏览器
-roundtable --no-browser "问题"
 ```
 
 ---
@@ -92,15 +76,13 @@ roundtable --no-browser "问题"
 ┌─────────────────────────────────────────┐
 │  阶段一:独立盲审                         │
 │  N 个异构模型并行,同一中性 prompt,互不可见 │
-│  产出: List[Take{model, text}]          │
 └────────────────┬────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────┐
 │  阶段二:书记员(Facilitator)              │
 │  输入匿名化意见,结构化抽取,不裁决         │
-│  产出: 决策地图                          │
-│  (共识/分歧+隐含变量/独有考量/未定变量)    │
+│  产出: 共识/分歧/独有考量/未定变量        │
 └────────────────┬────────────────────────┘
                  │
                  ▼
@@ -108,12 +90,10 @@ roundtable --no-browser "问题"
 │  阶段三:对抗性审查(Adversary)            │
 │  攻击多数意见:共同假设/少数派 steelman/   │
 │  "错在哪才成立"                          │
-│  产出: 对抗报告                          │
 └────────────────┬────────────────────────┘
                  │
                  ▼
-         Markdown 报告
-    (stdout + 落盘 roundtable_YYYYMMDD_HHMM.md)
+         可视化报告(浏览器)
 ```
 
 ---
@@ -122,7 +102,7 @@ roundtable --no-browser "问题"
 
 | 方案 | 问题 |
 |---|---|
-| 多轮辩论到共识 | 违反"无 ground truth ⇒ 不允许裁决者";token 成本几十倍,收益证据弱 |
+| 多轮辩论到共识 | 违反"无 ground truth ⇒ 不允许裁决者";token 成本几十倍 |
 | 多数投票选答案 | 相关误差会被投票放大(同源语料高度重叠) |
 | 给模型分配人设 | 角色扮演污染真实判断 |
 
@@ -139,28 +119,14 @@ roundtable --no-browser "问题"
 
 ---
 
-## 测试
-
-```bash
-pip install pytest
-python -m pytest tests/ -v
-```
-
----
-
 ## 已知局限
 
-### A1: 书记员 prompt 注入漏洞
-意见文本中的注入指令可能诱导输出推荐性表述。v2 可增加输出校验层。
-
-### A2: 盲审 prompt 受问题措辞锚定
-问题带倾向时模型会被框架影响。用户应使用中性措辞。
-
-### A3: 对抗者在高度一致时硬凑反对
-设计意图——当所有人同意时最需要挑战共同假设。产出质量由读者判断。
-
-### A4: 匿名化被内容自曝绕过
-理论上可行,实践中罕见。v1 选择不处理。
+| 编号 | 问题 | 缓解 |
+|---|---|---|
+| A1 | 书记员 prompt 注入漏洞 | 用户审查报告是否出现隐含推荐 |
+| A2 | 盲审 prompt 受问题措辞锚定 | 使用中性措辞提问 |
+| A3 | 对抗者在高度一致时硬凑反对 | 设计意图,产出质量由读者判断 |
+| A4 | 匿名化被内容自曝绕过 | 实践中罕见,v1 不处理 |
 
 ---
 
@@ -168,21 +134,16 @@ python -m pytest tests/ -v
 
 ```
 roundtable/
-├── roundtable.py          # 核心逻辑(单文件)
-├── __main__.py            # python -m roundtable
-├── pyproject.toml         # 包配置(pip install)
-├── start.bat              # Windows 双击启动 Web UI
-├── .env.example           # 环境变量模板
-├── requirements.txt       # 依赖
-├── LICENSE                # MIT
-├── README.md              # 本文件
+├── roundtable.py          # 核心逻辑
 ├── web/
-│   ├── app.py             # Web 服务(标准库 HTTP)
-│   ├── __main__.py        # python -m web.app
+│   ├── app.py             # Web 服务
 │   └── static/
 │       └── index.html     # 暗色主题 UI
-└── tests/
-    └── test_roundtable.py # 16 项测试
+├── Roundtable.bat         # Windows 双击启动
+├── Roundtable-v1.0.0-Windows.zip  # 安装包
+├── pyproject.toml         # pip install 配置
+├── launcher.py            # PyInstaller 启动器
+└── tests/                 # 16 项测试
 ```
 
 ---
