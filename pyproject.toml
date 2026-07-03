@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roundtable"
+version = "1.0.0"
+description = "Multi-model roundtable decision tool — blind review / structured extraction / adversarial audit"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+roundtable = "roundtable:main"
+
+[tool.setuptools]
+py-modules = ["roundtable"]

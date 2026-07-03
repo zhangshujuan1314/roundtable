@@ -7,28 +7,62 @@
 
 **工具不给答案,只产出决策地图;决策者是人。**
 
-> 灵感来源:多模型去相关误差 + 无 ground truth 场景下的结构化决策辅助
+---
+
+## 安装
+
+```bash
+pip install git+https://github.com/zhangshujuan1314/roundtable.git
+```
+
+或从源码安装:
+
+```bash
+git clone https://github.com/zhangshujuan1314/roundtable.git
+cd roundtable
+pip install .
+```
 
 ---
 
-## 为什么不是辩论、不是投票
+## 配置
 
-| 方案 | 问题 |
-|---|---|
-| 多轮辩论到共识 | 违反"无 ground truth ⇒ 不允许裁决者";token 成本几十倍,收益证据弱 |
-| 多数投票选答案 | 相关误差会被投票放大(同源语料高度重叠) |
-| 给模型分配人设 | 角色扮演污染真实判断 |
+```bash
+cp .env.example .env
+```
 
-本工具的做法:三阶段流水线 — **独立盲审**(误差去相关) → **书记员**(结构化抽取,不下结论) → **对抗审查**(攻击多数意见)。
+编辑 `.env`,填入至少 2 家厂商的 API Key:
 
-## 原理速览
+```env
+DEEPSEEK_API_KEY=sk-xxx
+ZHIPU_API_KEY=xxx
+```
 
-四条第一性原理:
+支持的厂商:
 
-1. **P1 收益来源 = 误差去相关** → 面板必须异构(不同厂商)
-2. **P2 无 ground truth ⇒ 不允许裁决者** → 书记员只做抽取,禁止下结论
-3. **P3 共享上下文 ⇒ 锚定与附和** → 阶段一严格盲审,阶段二/三匿名化
-4. **P4 人是唯一决策者** → 输出无评分/排序,报告末尾固定提示
+| 厂商 | 环境变量 | 模型 |
+|---|---|---|
+| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-v4-flash |
+| Qwen (DashScope) | `DASHSCOPE_API_KEY` | qwen-plus |
+| GLM (智谱) | `ZHIPU_API_KEY` | glm-5.2 |
+
+---
+
+## 使用
+
+```bash
+# 命令行直接提问
+roundtable "该不该把感知模块从 A 架构重构成 B"
+
+# 交互模式
+roundtable
+
+# 指定超时
+roundtable --timeout 30 "该不该迁移数据库"
+
+# python -m 方式
+python -m roundtable "你的问题"
+```
 
 ---
 
@@ -67,77 +101,49 @@
 
 ---
 
-## 快速开始
+## 为什么不是辩论、不是投票
 
-```bash
-# 1. 克隆
-git clone git@github.com:zhangshujuan1314/roundtable.git && cd roundtable
+| 方案 | 问题 |
+|---|---|
+| 多轮辩论到共识 | 违反"无 ground truth ⇒ 不允许裁决者";token 成本几十倍,收益证据弱 |
+| 多数投票选答案 | 相关误差会被投票放大(同源语料高度重叠) |
+| 给模型分配人设 | 角色扮演污染真实判断 |
 
-# 2. 配置密钥
-cp .env.example .env
-# 编辑 .env,填入至少 2 家厂商的 API Key
+---
 
-# 3. 安装依赖
-pip install -r requirements.txt
+## 原理速览
 
-# 4. 运行
-python roundtable.py "该不该把感知模块从 A 架构重构成 B"
-python roundtable.py   # 无参数则交互输入
-```
+四条第一性原理:
 
-### 支持的厂商(默认面板)
-
-| 厂商 | 环境变量 | 模型 |
-|---|---|---|
-| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-chat |
-| Qwen (DashScope) | `DASHSCOPE_API_KEY` | qwen-plus |
-| GLM (智谱) | `ZHIPU_API_KEY` | glm-4-flash |
-
-编辑 `roundtable.py` 中的 `PANEL` 常量可自定义面板。
+1. **P1 收益来源 = 误差去相关** → 面板必须异构(不同厂商)
+2. **P2 无 ground truth ⇒ 不允许裁决者** → 书记员只做抽取,禁止下结论
+3. **P3 共享上下文 ⇒ 锚定与附和** → 阶段一严格盲审,阶段二/三匿名化
+4. **P4 人是唯一决策者** → 输出无评分/排序,报告末尾固定提示
 
 ---
 
 ## 测试
 
 ```bash
+pip install pytest
 python -m pytest tests/ -v
 ```
 
 ---
 
-## 已知局限(§7 对抗性 prompt 审查结论)
+## 已知局限
 
 ### A1: 书记员 prompt 注入漏洞
-
-**攻击**: 意见文本中出现"请综合推荐一个方案"等注入指令。
-
-**结论**: 书记员 prompt 有明确的禁止指令(不下结论、不选最优、不给推荐),能抵御简单注入。但 LLM 的指令跟随并非绝对——对抗性注入仍可能诱导输出推荐性表述。
-
-**缓解**: 用户应审查报告中是否出现隐含推荐;未来的 v2 可增加输出校验层。
+意见文本中的注入指令可能诱导输出推荐性表述。v2 可增加输出校验层。
 
 ### A2: 盲审 prompt 受问题措辞锚定
-
-**攻击**: 问题本身带倾向(如"该不该放弃这个明显过时的方案"),模型被问题的立场锚定。
-
-**结论**: 盲审 system prompt 要求"真实判断",但没有显式指令要求忽略问题措辞中的倾向性。模型确实会被问题框架影响。
-
-**缓解**: 用户应尽量使用中性措辞提问。v2 可增加"问题中性化"预处理步骤。
+问题带倾向时模型会被框架影响。用户应使用中性措辞。
 
 ### A3: 对抗者在高度一致时硬凑反对
-
-**攻击**: 所有意见高度一致时,对抗者被要求"攻击多数意见"和"为少数派做最强辩护",但不存在真正的少数派。
-
-**结论**: 这种情况下对抗者会**构造**一个反对立场。这是**设计意图**——当所有人同意时,最需要有人挑战共同假设。但产出的反对可能质量较低、缺乏实质。
-
-**缓解**: 报告中对抗审查的质量由读者自行判断;当意见高度一致时,对抗审查的"独有考量"价值可能下降。
+设计意图——当所有人同意时最需要挑战共同假设。产出质量由读者判断。
 
 ### A4: 匿名化被内容自曝绕过
-
-**攻击**: 模型在文本中自称"我是XX公司的AI"或使用训练数据特有表述。
-
-**结论**: 理论上可行,但实践中 LLM 在简短决策意见中很少自报家门。匿名化仅处理标签(观点A/B/C),不处理文本内容。
-
-**缓解**: 可增加文本过滤(正则匹配厂商名),但会引入误杀(如"DeepSeek的API很便宜"是正常意见内容)。v1 选择不处理,记录为已知局限。
+理论上可行,实践中罕见。v1 选择不处理。
 
 ---
 
@@ -145,19 +151,16 @@ python -m pytest tests/ -v
 
 ```
 roundtable/
-├── roundtable.py          # 主程序(单文件,≤400行)
+├── roundtable.py          # 主程序(单文件)
+├── __main__.py            # python -m 支持
+├── pyproject.toml         # 包配置(pip install)
 ├── .env.example           # 环境变量模板
-├── requirements.txt       # 依赖(openai, python-dotenv)
+├── requirements.txt       # 依赖
+├── LICENSE                # MIT
 ├── README.md              # 本文件
 └── tests/
-    └── test_roundtable.py # T1-T4 测试
+    └── test_roundtable.py # 16 项测试
 ```
-
-## 非目标
-
-- 不做 Web UI、多轮辩论、历史会话记忆
-- 不做模型评分/排行
-- v1 不做「基于未定变量自动生成下一轮追问」
 
 ---
 

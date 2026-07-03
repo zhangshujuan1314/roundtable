@@ -240,18 +240,28 @@ def _report(question: str, takes: list[Take], decision_map: str, adversary_repor
 
 # ── CLI 入口 ──────────────────────────────────────────────────────────────────
 
+def _log(msg: str) -> None:
+    """进度输出(stderr,不影响 stdout 报告)。"""
+    print(msg, file=sys.stderr, flush=True)
+
+
 async def _run(question: str) -> None:
     # 阶段一
+    _log("⏳ 阶段一:独立盲审中...")
     takes = await _gather(question)
+    ok = [t for t in takes if not t.error]
+    _log(f"✅ 收到 {len(ok)}/{len(takes)} 条有效意见")
 
     # 匿名化
     anon = _anon(takes)
 
-    # 阶段二 & 三(可并行,但 Facilitator 结果不依赖 Adversary)
+    # 阶段二 & 三(并行)
+    _log("⏳ 阶段二/三:书记员 + 对抗审查中...")
     decision_map, adversary_report = await asyncio.gather(
         _facilitator(anon),
         _adversary(anon),
     )
+    _log("✅ 分析完成")
 
     # 拼装报告
     report = _report(question, takes, decision_map, adversary_report)
@@ -267,7 +277,7 @@ async def _run(question: str) -> None:
     fname = f"roundtable_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
     with open(fname, "w", encoding="utf-8") as f:
         f.write(report)
-    print(f"\n📄 报告已保存: {fname}", file=sys.stderr)
+    _log(f"📄 报告已保存: {fname}")
 
 
 def main() -> None:
