@@ -50,8 +50,25 @@ ZHIPU_API_KEY=xxx
 
 ## 使用
 
+### Web UI(推荐)
+
 ```bash
-# 命令行直接提问
+# 启动 Web 界面(自动打开浏览器)
+roundtable-web
+
+# 或从源码
+python -m web.app
+
+# Windows 双击
+start.bat
+```
+
+浏览器打开 `http://127.0.0.1:7800`,输入问题即可。
+
+### 命令行
+
+```bash
+# 直接提问
 roundtable "该不该把感知模块从 A 架构重构成 B"
 
 # 交互模式
@@ -60,8 +77,8 @@ roundtable
 # 指定超时
 roundtable --timeout 30 "该不该迁移数据库"
 
-# python -m 方式
-python -m roundtable "你的问题"
+# 不打开浏览器
+roundtable --no-browser "问题"
 ```
 
 ---
@@ -151,13 +168,19 @@ python -m pytest tests/ -v
 
 ```
 roundtable/
-├── roundtable.py          # 主程序(单文件)
-├── __main__.py            # python -m 支持
+├── roundtable.py          # 核心逻辑(单文件)
+├── __main__.py            # python -m roundtable
 ├── pyproject.toml         # 包配置(pip install)
+├── start.bat              # Windows 双击启动 Web UI
 ├── .env.example           # 环境变量模板
 ├── requirements.txt       # 依赖
 ├── LICENSE                # MIT
 ├── README.md              # 本文件
+├── web/
+│   ├── app.py             # Web 服务(标准库 HTTP)
+│   ├── __main__.py        # python -m web.app
+│   └── static/
+│       └── index.html     # 暗色主题 UI
 └── tests/
     └── test_roundtable.py # 16 项测试
 ```
