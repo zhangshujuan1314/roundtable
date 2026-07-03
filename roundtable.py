@@ -9,13 +9,21 @@ import argparse
 import asyncio
 import os
 import sys
+import webbrowser
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 load_dotenv()
+
+console = Console(stderr=True)  # 进度输出到 stderr,不污染 stdout 报告
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
 
@@ -113,7 +121,7 @@ async def _gather(question: str) -> list[Take]:
     seen: dict[str, str] = {}
     for p, v in zip(PANEL, vendors):
         if v in seen:
-            print(f"⚠️  P1 警告: {p.name} 与 {seen[v]} 同厂商,去相关收益降低", file=sys.stderr)
+            console.print(f"[yellow]⚠ P1 警告:[/] {p.name} 与 {seen[v]} 同厂商,去相关收益降低")
         else:
             seen[v] = p.name
 
@@ -122,10 +130,12 @@ async def _gather(question: str) -> list[Take]:
     )
     ok = [t for t in takes if not t.error]
     if len(ok) < 2:
-        print(f"❌ 存活意见 {len(ok)} 条(< 2),无法形成有效分歧。", file=sys.stderr)
+        console.print(f"[red]✗[/] 存活意见 {len(ok)} 条(< 2),无法形成有效分歧。")
         for t in takes:
-            status = "✅" if not t.error else f"⚠️  {t.error}"
-            print(f"  {t.model}: {status}", file=sys.stderr)
+            if t.error:
+                console.print(f"  [yellow]⚠[/] {t.model}: {t.error}")
+            else:
+                console.print(f"  [green]✓[/] {t.model}")
         sys.exit(1)
     return takes
 
@@ -238,46 +248,167 @@ def _report(question: str, takes: list[Take], decision_map: str, adversary_repor
     return "\n".join(lines)
 
 
+# ── HTML 报告生成 ────────────────────────────────────────────────────────────
+
+HTML_TEMPLATE = """\
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>圆桌决策报告 — {question_short}</title>
+<style>
+  :root {{ --bg: #0d1117; --fg: #c9d1d9; --accent: #58a6ff; --warn: #d29922;
+           --border: #30363d; --card: #161b22; --green: #3fb950; --red: #f85149; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont,
+         "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; padding: 2rem; }}
+  .container {{ max-width: 900px; margin: 0 auto; }}
+  h1 {{ color: var(--accent); font-size: 1.8rem; margin-bottom: 0.5rem; }}
+  h2 {{ color: var(--green); font-size: 1.3rem; margin: 2rem 0 1rem; padding-bottom: 0.5rem;
+       border-bottom: 1px solid var(--border); }}
+  h3 {{ color: var(--accent); font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }}
+  .meta {{ color: #8b949e; font-size: 0.9rem; margin-bottom: 2rem; }}
+  .card {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+           padding: 1.2rem; margin: 1rem 0; }}
+  .card.warn {{ border-left: 3px solid var(--warn); }}
+  .card.ok {{ border-left: 3px solid var(--green); }}
+  blockquote {{ border-left: 3px solid var(--warn); padding: 0.5rem 1rem; margin: 1rem 0;
+                background: rgba(210,153,34,0.1); border-radius: 4px; }}
+  strong {{ color: var(--accent); }}
+  code {{ background: #21262d; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.9em; }}
+  pre {{ background: #21262d; padding: 1rem; border-radius: 8px; overflow-x: auto; }}
+  .footer {{ margin-top: 3rem; padding: 1rem; border-top: 1px solid var(--border);
+             color: #8b949e; font-size: 0.85rem; text-align: center; }}
+  .nav {{ position: sticky; top: 0; background: var(--bg); padding: 0.5rem 0;
+          border-bottom: 1px solid var(--border); margin-bottom: 2rem; z-index: 10; }}
+  .nav a {{ color: var(--accent); text-decoration: none; margin-right: 1.5rem; font-size: 0.9rem; }}
+  .nav a:hover {{ text-decoration: underline; }}
+  @media (max-width: 600px) {{ body {{ padding: 1rem; }} }}
+</style>
+</head>
+<body>
+<div class="container">
+  <nav class="nav">
+    <a href="#p1">P1 原始意见</a>
+    <a href="#p2">P2 决策地图</a>
+    <a href="#p3">P3 对抗审查</a>
+  </nav>
+  <h1>圆桌决策报告</h1>
+  <div class="meta">
+    <strong>问题</strong>: {question}<br>
+    <strong>时间</strong>: {ts}<br>
+    <strong>面板</strong>: {panel_info}
+  </div>
+  {body_html}
+  <div class="footer">
+    决策权在你。共识是警报不是背书;优先看未定变量与对抗审查。
+  </div>
+</div>
+</body>
+</html>
+"""
+
+
+def _md_to_html(md_text: str) -> str:
+    """Markdown → HTML。"""
+    import markdown
+    return markdown.markdown(md_text, extensions=["extra", "nl2br"])
+
+
+def _generate_html(question: str, takes: list[Take], md_report: str) -> str:
+    """从 Markdown 报告生成完整 HTML。"""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    panel_info = " / ".join(
+        f"{t.model}{'⚠️' if t.error else '✅'}" for t in takes
+    )
+
+    # 拆分 P1/P2/P3 段落
+    parts = md_report.split("---")
+    p1_html = _md_to_html(parts[1]) if len(parts) > 1 else ""
+    p2_html = _md_to_html(parts[2]) if len(parts) > 2 else ""
+    p3_html = _md_to_html(parts[3]) if len(parts) > 3 else ""
+
+    body_html = f"""
+    <h2 id="p1">P1: 各模型原始意见</h2>
+    <div class="card ok">{p1_html}</div>
+    <h2 id="p2">P2: 决策地图</h2>
+    <div class="card">{p2_html}</div>
+    <h2 id="p3">P3: 对抗性审查</h2>
+    <div class="card">{p3_html}</div>
+    """
+
+    return HTML_TEMPLATE.format(
+        question=question,
+        question_short=question[:30],
+        ts=ts,
+        panel_info=panel_info,
+        body_html=body_html,
+    )
+
+
 # ── CLI 入口 ──────────────────────────────────────────────────────────────────
 
-def _log(msg: str) -> None:
-    """进度输出(stderr,不影响 stdout 报告)。"""
-    print(msg, file=sys.stderr, flush=True)
+async def _run(question: str, no_browser: bool = False) -> None:
+    ts_label = datetime.now().strftime("%Y%m%d_%H%M")
 
-
-async def _run(question: str) -> None:
     # 阶段一
-    _log("⏳ 阶段一:独立盲审中...")
-    takes = await _gather(question)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]阶段一:独立盲审中..."),
+        console=console,
+        transient=True,
+    ) as progress:
+        progress.add_task("gather", total=None)
+        takes = await _gather(question)
+
     ok = [t for t in takes if not t.error]
-    _log(f"✅ 收到 {len(ok)}/{len(takes)} 条有效意见")
+    console.print(f"[green]✓[/] 收到 [bold]{len(ok)}/{len(takes)}[/] 条有效意见")
+    for t in takes:
+        if t.error:
+            console.print(f"  [yellow]⚠[/] {t.model}: {t.error}")
 
     # 匿名化
     anon = _anon(takes)
 
     # 阶段二 & 三(并行)
-    _log("⏳ 阶段二/三:书记员 + 对抗审查中...")
-    decision_map, adversary_report = await asyncio.gather(
-        _facilitator(anon),
-        _adversary(anon),
-    )
-    _log("✅ 分析完成")
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]阶段二/三:书记员 + 对抗审查..."),
+        console=console,
+        transient=True,
+    ) as progress:
+        progress.add_task("analyze", total=None)
+        decision_map, adversary_report = await asyncio.gather(
+            _facilitator(anon),
+            _adversary(anon),
+        )
+    console.print("[green]✓[/] 分析完成")
 
-    # 拼装报告
-    report = _report(question, takes, decision_map, adversary_report)
+    # 拼装 Markdown 报告
+    md_report = _report(question, takes, decision_map, adversary_report)
 
-    # stdout(处理 Windows 终端编码)
-    try:
-        print(report)
-    except UnicodeEncodeError:
-        sys.stdout.reconfigure(encoding="utf-8")
-        print(report)
+    # 终端输出(用 rich 渲染 Markdown)
+    console.print()
+    console.print(Markdown(md_report))
 
-    # 落盘
-    fname = f"roundtable_{datetime.now().strftime('%Y%m%d_%H%M')}.md"
-    with open(fname, "w", encoding="utf-8") as f:
-        f.write(report)
-    _log(f"📄 报告已保存: {fname}")
+    # 落盘 Markdown
+    md_file = f"roundtable_{ts_label}.md"
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write(md_report)
+
+    # 生成 HTML 并打开浏览器
+    html = _generate_html(question, takes, md_report)
+    html_file = f"roundtable_{ts_label}.html"
+    with open(html_file, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    console.print(f"\n[green]✓[/] Markdown: [bold]{md_file}[/]")
+    console.print(f"[green]✓[/] HTML:     [bold]{html_file}[/]")
+
+    if not no_browser:
+        webbrowser.open(Path(html_file).resolve().as_uri())
+        console.print("[green]✓[/] 已在浏览器中打开")
 
 
 def main() -> None:
@@ -286,11 +417,13 @@ def main() -> None:
         description="多模型圆桌决策工具 — 独立盲审 / 结构化抽取 / 对抗审查",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="示例:\n"
-               '  python roundtable.py "该不该把感知模块从 A 架构重构成 B"\n'
-               "  python roundtable.py   # 无参数则交互输入",
+               '  roundtable "该不该把感知模块从 A 架构重构成 B"\n'
+               "  roundtable            # 无参数则交互输入\n"
+               "  roundtable --no-browser  # 不自动打开浏览器",
     )
     parser.add_argument("question", nargs="?", default=None, help="决策问题(省略则交互输入)")
     parser.add_argument("--timeout", type=int, default=TIMEOUT, help=f"单模型超时秒数(默认 {TIMEOUT})")
+    parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     args = parser.parse_args()
 
     TIMEOUT = args.timeout
@@ -299,9 +432,9 @@ def main() -> None:
     if not question:
         question = input("请输入决策问题: ").strip()
         if not question:
-            print("❌ 问题不能为空", file=sys.stderr)
+            console.print("[red]✗[/] 问题不能为空")
             sys.exit(1)
-    asyncio.run(_run(question))
+    asyncio.run(_run(question, no_browser=args.no_browser))
 
 
 if __name__ == "__main__":

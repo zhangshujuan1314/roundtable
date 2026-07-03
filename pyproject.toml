@@ -12,6 +12,8 @@ requires-python = ">=3.10"
 dependencies = [
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+    "markdown>=3.5",
 ]
 
 [project.scripts]

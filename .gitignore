@@ -4,5 +4,6 @@ __pycache__/
 .env
 *.md_
 roundtable_*.md
+roundtable_*.html
 *.egg-info/
 dist/
