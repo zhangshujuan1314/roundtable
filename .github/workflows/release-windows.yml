@@ -52,6 +52,20 @@ jobs:
           Copy-Item 'dist/Roundtable.exe' $packageDir
           Copy-Item '.env.example' $packageDir
           Copy-Item 'README.md' $packageDir
+
+          @'
+          @echo off
+          "%~dp0Roundtable.exe" %*
+          '@ | Set-Content -Path (Join-Path $packageDir 'Roundtable.bat') -Encoding ascii
+
+          $required = @('Roundtable.exe', 'Roundtable.bat', '.env.example', 'README.md')
+          foreach ($name in $required) {
+            $path = Join-Path $packageDir $name
+            if (-not (Test-Path $path)) {
+              throw "Release package missing required file: $name"
+            }
+          }
+
           $zip = "Roundtable-$tag-Windows.zip"
           Compress-Archive -Path "$packageDir/*" -DestinationPath $zip -Force
           (Get-FileHash $zip -Algorithm SHA256).Hash | Out-File "$zip.sha256" -Encoding ascii
