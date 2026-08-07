@@ -1,6 +1,15 @@
 name: Windows Release
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '*.py'
+      - 'web/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'roundtable.spec'
+      - '.github/workflows/release-windows.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -37,7 +46,7 @@ jobs:
       - name: Package release archive
         shell: pwsh
         run: |
-          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } elseif ('${{ github.event_name }}' -eq 'push') { '${{ github.ref_name }}' } else { 'pr-build' }
           $packageDir = Join-Path $PWD 'release/Roundtable'
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
           Copy-Item 'dist/Roundtable.exe' $packageDir
@@ -49,7 +58,17 @@ jobs:
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append
           "RELEASE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Upload PR build artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: roundtable-windows-pr-build
+          path: |
+            Roundtable-pr-build-Windows.zip
+            Roundtable-pr-build-Windows.zip.sha256
+
       - name: Create or update GitHub Release
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
