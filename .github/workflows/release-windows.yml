@@ -1,0 +1,80 @@
+name: Windows Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '*.py'
+      - 'web/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'roundtable.spec'
+      - '.github/workflows/release-windows.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v1.0.0
+        required: true
+        default: v1.0.0
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install build and test dependencies
+        run: python -m pip install -e . pytest pyinstaller
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Build Windows executable
+        run: pyinstaller --clean roundtable.spec
+
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } elseif ('${{ github.event_name }}' -eq 'push') { '${{ github.ref_name }}' } else { 'pr-build' }
+          $packageDir = Join-Path $PWD 'release/Roundtable'
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          Copy-Item 'dist/Roundtable.exe' $packageDir
+          Copy-Item '.env.example' $packageDir
+          Copy-Item 'README.md' $packageDir
+          $zip = "Roundtable-$tag-Windows.zip"
+          Compress-Archive -Path "$packageDir/*" -DestinationPath $zip -Force
+          (Get-FileHash $zip -Algorithm SHA256).Hash | Out-File "$zip.sha256" -Encoding ascii
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload PR build artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: roundtable-windows-pr-build
+          path: |
+            Roundtable-pr-build-Windows.zip
+            Roundtable-pr-build-Windows.zip.sha256
+
+      - name: Create or update GitHub Release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" 2>$null) {
+            gh release upload "$env:RELEASE_TAG" "$env:RELEASE_ZIP" "$env:RELEASE_ZIP.sha256" --clobber --repo "$env:GITHUB_REPOSITORY"
+          } else {
+            gh release create "$env:RELEASE_TAG" "$env:RELEASE_ZIP" "$env:RELEASE_ZIP.sha256" --target "$env:GITHUB_SHA" --title "Roundtable $env:RELEASE_TAG" --generate-notes --repo "$env:GITHUB_REPOSITORY"
+          }
