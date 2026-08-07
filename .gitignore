@@ -10,3 +10,5 @@ dist/
 build/
 *.spec.bak
 test_build*
+Roundtable-v*-Windows.zip
+Roundtable-v*-Windows.zip.sha256
