@@ -14,7 +14,9 @@
 
 ### 1. 下载安装包
 
-[下载 Roundtable-v1.0.0-Windows.zip](https://github.com/zhangshujuan1314/roundtable/raw/main/Roundtable-v1.0.0-Windows.zip)
+[下载 Roundtable-v1.0.0-Windows.zip](https://github.com/zhangshujuan1314/roundtable/releases/download/v1.0.0/Roundtable-v1.0.0-Windows.zip)
+
+> 发布安装包统一存放在 [GitHub Releases](https://github.com/zhangshujuan1314/roundtable/releases)，不再提交到源码树。
 
 ### 2. 解压并配置
 
@@ -140,11 +142,12 @@ roundtable/
 │   └── static/
 │       └── index.html     # 暗色主题 UI
 ├── Roundtable.bat         # Windows 双击启动
-├── Roundtable-v1.0.0-Windows.zip  # 安装包
 ├── pyproject.toml         # pip install 配置
 ├── launcher.py            # PyInstaller 启动器
 └── tests/                 # 16 项测试
 ```
+
+发布二进制位于 GitHub Releases，不纳入源码目录。
 
 ---
 
